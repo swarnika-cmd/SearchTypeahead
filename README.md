@@ -11,7 +11,7 @@ Aura Search is a production-grade Search Typeahead (autocomplete) system designe
 
 ### App Walkthrough Video
 > [!TIP]
-> **[Watch the Demo Video](https://drive.google.com/file/d/1rXnnWmc6mjUDMMRGz2wzuY0sad7yC8jp/view?usp=sharing)**: Watch the full walkthrough to see real-time cache routing, write-behind aggregation, and algorithm switches in action.
+> **[Watch the Demo Video](https://drive.google.com/file/d/130CBMaXAaDd4xsj7O6qDlaFJp_hLplWW/view?usp=sharing)**: Watch the full walkthrough to see real-time cache routing, write-behind aggregation, and algorithm switches in action.
 
 ---
 
