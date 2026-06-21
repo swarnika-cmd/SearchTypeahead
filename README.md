@@ -202,3 +202,18 @@ Run the Jest test suite covering Trie prefixes, custom debouncing, consistent ha
 ```bash
 npx jest
 ```
+
+---
+
+## 6. Render Deployment Guide
+
+Aura Search is optimized to be deployed as a single unified **Render Web Service**. Follow these steps:
+
+1. **Create a Web Service** on [Render](https://render.com/) and connect your repository.
+2. **Configure Service Settings**:
+   - **Runtime**: `Node`
+   - **Build Command**: `npm run build`
+   - **Start Command**: `npm start`
+3. **Zero-Config Database Seeding**: On startup, the server automatically checks if the SQLite queries database is empty. If empty, it triggers the Zipf seeder to generate 105k+ queries automatically, making deployment plug-and-play.
+4. **Data Persistence**: To persist search query count updates across restarts/redeploys on Render's ephemeral filesystem, attach a **Persistent Disk** (under the Disk settings of your Render Web Service) at `/opt/render/project/src` (the default working directory), or migrate `db.ts` to query a cloud database (like Turso or PostgreSQL).
+

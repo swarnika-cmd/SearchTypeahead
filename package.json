@@ -3,7 +3,12 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build:frontend": "npm install --prefix frontend && npm run build --prefix frontend",
+    "build:backend": "tsc",
+    "build": "npm run build:frontend && npm run build:backend",
+    "start": "node dist/server.js",
+    "seed": "ts-node src/seed.ts",
+    "test": "jest"
   },
   "keywords": [],
   "author": "",

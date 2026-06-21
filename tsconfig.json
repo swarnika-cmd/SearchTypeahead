@@ -11,5 +11,5 @@
     "rootDir": "./src",
     "types": ["jest", "node"]
   },
-  "include": ["src/**/*", "tests/**/*"]
+  "include": ["src/**/*"]
 }
