@@ -1,7 +1,5 @@
 # Aura Search: Distributed Autocomplete & Real-Time Performance Analytics
 
-**🚀 Live Demo:** [https://searchtypeahead.onrender.com](https://searchtypeahead.onrender.com)
-
 Aura Search is a production-grade Search Typeahead (autocomplete) system designed for a High-Level Design (HLD) assignment. It features dual-mode prefix suggestions, distributed memory caching routed via a consistent hashing ring, write-behind batch query count persistence, and a real-time system performance monitoring dashboard.
 
 ---
