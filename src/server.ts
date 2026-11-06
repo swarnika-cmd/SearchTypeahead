@@ -1,7 +1,7 @@
 import express from 'express';
 import path from 'path';
 import { Trie, hourStart } from './trie';
-import { dbAll, initDb, dbRun } from './db';
+import { dbAll, initDb, closeDb } from './db';
 import { metrics } from './metrics';
 import { HashRing, CacheNode, hashKey } from './cache';
 import { SearchBuffer } from './buffer';
@@ -301,9 +301,26 @@ async function startServer() {
     searchBuffer.start();
 
     // 4. Start Listening
-    app.listen(PORT, () => {
+    const server = app.listen(PORT, () => {
       console.log(`Server running at http://localhost:${PORT}`);
     });
+
+    // 5. On graceful stop (Ctrl+C, docker stop, Kubernetes) write the buffered
+    //    searches to SQLite before exiting. A crash or SIGKILL still loses them.
+    const shutdown = async (signal: string) => {
+      console.log(`${signal} received: flushing search buffer and shutting down...`);
+      server.close();
+      try {
+        await searchBuffer.shutdown();
+        await closeDb();
+        process.exit(0);
+      } catch (err) {
+        console.error('Shutdown flush failed:', err);
+        process.exit(1);
+      }
+    };
+    process.once('SIGTERM', () => shutdown('SIGTERM'));
+    process.once('SIGINT', () => shutdown('SIGINT'));
   } catch (error) {
     console.error('Failed to start server:', error);
     process.exit(1);
