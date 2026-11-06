@@ -1,3 +1,5 @@
+import { normalizeQuery } from './normalize';
+
 export interface Suggestion {
   query: string;
   count: number;
@@ -34,7 +36,9 @@ export class Trie {
    * Helper to map a character to an index (0-36):
    * 'a'-'z' => 0-25
    * '0'-'9' => 26-35
-   * any other character (space, punctuation) => 36 (space)
+   * ' '     => 36
+   * Input always goes through normalizeQuery() first, so no other character
+   * reaches this function.
    */
   private getCharIndex(char: string): number {
     const code = char.charCodeAt(0);
@@ -48,10 +52,11 @@ export class Trie {
   }
 
   /**
-   * Cleans and sanitizes query input (converts to lowercase, trims).
+   * Normalises query input (see normalize.ts): lowercase, punctuation to
+   * spaces, repeated spaces collapsed, trimmed.
    */
   private sanitize(query: string): string {
-    return query.toLowerCase().trim();
+    return normalizeQuery(query);
   }
 
   /**

@@ -60,16 +60,31 @@ describe('Trie Prefix Suggestion System', () => {
     expect(suggestions[1].query).toBe('iphone charger');
   });
 
-  test('should sanitize punctuation characters to spaces', () => {
+  test('should normalise punctuation to single spaces', () => {
     trie.insert('c++ tutorial', 80);
     trie.insert('c# developer', 90);
 
-    // Both should be routed since '+' and '#' map to space
+    // '+' and '#' become spaces and repeated spaces collapse into one
     const suggestions = trie.getSuggestions('c');
     expect(suggestions).toHaveLength(2);
-    // Since 'c++ tutorial' maps to 'c   tutorial' and 'c# developer' to 'c  developer'
-    expect(suggestions[0].query).toBe('c# developer');
-    expect(suggestions[1].query).toBe('c++ tutorial');
+    expect(suggestions[0].query).toBe('c developer');
+    expect(suggestions[1].query).toBe('c tutorial');
+    expect(trie.getCount('C++   Tutorial')).toBe(80);
+  });
+
+  test('should not let two different strings share one trie node (punctuation aliasing)', () => {
+    // '+' and '-' are outside the 37-char alphabet. Before normalisation both
+    // mapped to the space slot, so 'c++' and 'c--' ended at the same node and
+    // the second insert silently overwrote the first one's count.
+    trie.insert('c++', 5);
+    trie.insert('c--', 7);
+
+    const suggestions = trie.getSuggestions('c');
+    for (const s of suggestions) {
+      expect(trie.getCount(s.query)).toBe(s.count);
+    }
+    // Both normalise to the same query, so only one suggestion should exist.
+    expect(suggestions.map(s => s.query)).toEqual(['c']);
   });
 
   test('should perform stable lexicographical sorting when counts are equal', () => {
