@@ -9,7 +9,9 @@
     "start": "node dist/server.js",
     "seed": "ts-node src/seed.ts",
     "test": "jest",
-    "typecheck": "tsc --noEmit -p tsconfig.test.json"
+    "typecheck": "tsc --noEmit -p tsconfig.test.json",
+    "bench": "bash bench/run-all.sh",
+    "bench:quick": "bash bench/run-all.sh --quick"
   },
   "keywords": [],
   "author": "",

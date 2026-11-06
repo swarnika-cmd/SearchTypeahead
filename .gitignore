@@ -7,3 +7,5 @@ _git_backup_/
 
 # Frontend build output (npm run build:frontend writes here)
 /public/
+bench/.work/
+bench/results/*-quick*
