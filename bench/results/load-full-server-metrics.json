@@ -1,0 +1,10 @@
+{
+  "p95LatencyMs": 0.01,
+  "cacheHitRatePercent": 97.9,
+  "cacheHits": 429479,
+  "cacheMisses": 9211,
+  "dbReads": 2,
+  "dbWrites": 0,
+  "searchesSubmitted": 0,
+  "totalRequests": 438690
+}

@@ -207,11 +207,19 @@ Hardware: Apple M4 Pro (12 cores), Docker Desktop Linux VM, Node 20.
 
 | Benchmark | Result |
 |---|---|
-| Trie, 100k terms | _pending: see `bench/results/trie-bench-full.md`_ |
-| Trie, 1M terms | _pending: see `bench/results/trie-bench-full.md`_ |
-| HTTP, 50 VUs x 30 s | _pending: see `bench/results/load-full.md`_ |
+| Trie, 100k terms | 559k nodes, built in 2.5 s, 532 MB heap; lookup p50 0.25 µs, p99 2.75 µs, p99.9 5.6 µs |
+| Trie, 1M terms | 4.85M nodes, built in 132 s, 4.4 GB heap; lookup p50 2.1 µs, p99 35 µs, p99.9 83 µs |
+| HTTP, 50 VUs x 30 s (100k terms) | 10,957 req/s, p50 3.6 ms, p95 7.9 ms, p99 9.9 ms, 0 errors (97.9% cache hits) |
 
-Memory estimate for 1M terms, from the 10k smoke run (about 0.95 KB per node × 4.85M nodes): 4-5 GB of heap, because of the 37-slot arrays and per-node lists. The script allows 6 GB, so Docker needs about 7 GB of memory. If the 1M size runs out of memory, the 100k results are already saved.
+Measured Nov 2026 on an Apple M4 Pro (Docker Desktop, `--cpus=2` per container). Full output in `bench/results/`.
+
+What these numbers say:
+
+- **Lookups are fast because top-K is precomputed.** A query walks at most `len(prefix)` nodes and copies a stored list, so latency barely depends on how many terms match.
+- **Memory is the price.** Each node holds a 37-slot child array plus its top-10 list, about 0.9 KB per node, so 1M terms need ~4.4 GB of heap and the build takes over 2 minutes. The next step would be a `Map` or a sorted child array for sparse nodes, or a compressed (radix) trie, trading some lookup speed for several times less memory.
+- **The HTTP number mostly measures the cache path.** With 97.9% hits, the single Node process spends its time on HTTP handling and JSON, not the trie.
+
+The 1M-term run needs about 7 GB of Docker memory (the script allows a 6 GB Node heap).
 
 ## 7. Project layout
 

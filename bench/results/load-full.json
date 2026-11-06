@@ -1,0 +1,23 @@
+{
+  "label": "full",
+  "date": "2026-11-06T20:01:21.281Z",
+  "host": "Apple M4 Pro, 12 cores; Docker Desktop: 12 CPUs, 8319238144 bytes RAM",
+  "serverNode": "v20.20.2",
+  "cpus": {
+    "server": 2,
+    "k6": 2
+  },
+  "seededTerms": 100000,
+  "vus": 50,
+  "duration": "30s",
+  "requests": 328745,
+  "requestsPerSec": 10956.9,
+  "latencyMs": {
+    "p50": 3.598,
+    "p95": 7.862,
+    "p99": 9.945,
+    "avg": 4.539,
+    "max": 309.978
+  },
+  "errorRate": 0
+}

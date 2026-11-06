@@ -1,0 +1,44 @@
+{
+  "environment": {
+    "date": "2026-11-06T19:57:33.948Z",
+    "node": "v20.20.2",
+    "platform": "linux arm64",
+    "cpuModel": "unknown",
+    "cpusVisible": 12,
+    "dockerCpus": "2",
+    "host": "Apple M4 Pro, 12 cores; Docker Desktop: 12 CPUs, 8319238144 bytes RAM",
+    "gcExposed": true
+  },
+  "results": [
+    {
+      "terms": 100000,
+      "trieNodes": 558714,
+      "buildMs": 2475,
+      "heapMB": 531.9,
+      "bytesPerTerm": 5578,
+      "lookups": 100000,
+      "latencyUs": {
+        "p50": 0.25,
+        "p99": 2.75,
+        "p999": 5.63,
+        "mean": 0.47,
+        "max": 1997.71
+      }
+    },
+    {
+      "terms": 1000000,
+      "trieNodes": 4850630,
+      "buildMs": 132258,
+      "heapMB": 4394,
+      "bytesPerTerm": 4607,
+      "lookups": 100000,
+      "latencyUs": {
+        "p50": 2.08,
+        "p99": 35.04,
+        "p999": 83.08,
+        "mean": 8.71,
+        "max": 90679.58
+      }
+    }
+  ]
+}
