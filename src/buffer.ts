@@ -1,4 +1,4 @@
-import db from './db';
+import { dbRun } from './db';
 import { metrics } from './metrics';
 import { Trie } from './trie';
 
@@ -8,8 +8,14 @@ import { Trie } from './trie';
  * we update the in-memory Trie immediately so suggestions stay fresh, and mark
  * the search query as "dirty" in a Set.
  *
- * A background worker periodically flushes the aggregated state of all dirty keys
- * into SQLite within a single transaction, reducing write Disk I/O significantly.
+ * A background timer flushes the aggregated state of all dirty keys into SQLite
+ * within a single transaction, either every `flushIntervalMs` or as soon as
+ * `maxBufferSize` unique queries are waiting. 1,000 searches for the same query
+ * between two flushes become one row write.
+ *
+ * Durability window: if the process is killed (crash, SIGKILL) everything added
+ * since the last successful flush is lost. On SIGTERM/SIGINT the server calls
+ * shutdown(), which flushes first.
  */
 export class SearchBuffer {
   private trie: Trie;
@@ -17,6 +23,7 @@ export class SearchBuffer {
   private flushIntervalMs: number;
   private maxBufferSize: number;
   private timer: NodeJS.Timeout | null;
+  private flushing: Promise<void> | null = null; // the flush currently writing, if any
 
   constructor(trie: Trie, flushIntervalMs = 5000, maxBufferSize = 50) {
     this.trie = trie;
@@ -58,59 +65,82 @@ export class SearchBuffer {
   }
 
   /**
+   * Stops the timer and writes everything still buffered.
+   * Call this on graceful shutdown (SIGTERM / SIGINT) so no searches are lost.
+   */
+  async shutdown(): Promise<void> {
+    this.stop();
+    await this.flush();
+  }
+
+  /**
    * Flushes all aggregated query counts to the database in a single transaction.
-   * Clears the dirty buffer set before database processing to avoid race conditions.
+   *
+   * Only one flush writes at a time: SQLite cannot nest transactions on one
+   * connection, so a second caller waits for the running flush, then writes
+   * whatever is left. If the write fails, the transaction is rolled back and the
+   * keys go back into the buffer so the next flush retries them.
    */
   async flush(): Promise<void> {
+    // Wait for any flush that is already writing
+    while (this.flushing) {
+      await this.flushing.catch(() => {});
+    }
     if (this.dirtyKeys.size === 0) return;
 
-    // 1. Snapshot and clear the buffer set immediately.
-    // This ensures any new requests arriving while DB I/O is executing
-    // are safely captured in the next batch rather than overwritten.
+    // Snapshot and clear the buffer. Searches that arrive while we are writing
+    // go into the fresh set and are written by the next flush.
     const keysToFlush = Array.from(this.dirtyKeys);
     this.dirtyKeys.clear();
 
+    this.flushing = this.writeBatch(keysToFlush);
+    try {
+      await this.flushing;
+    } catch (err) {
+      // Put the keys back so they are retried. The trie still holds their
+      // latest counts, so nothing is double counted.
+      keysToFlush.forEach(key => this.dirtyKeys.add(key));
+      throw err;
+    } finally {
+      this.flushing = null;
+    }
+  }
+
+  /**
+   * Writes the current trie counts for `keys` inside one transaction.
+   * For each query: one upsert of the all-time count, and one upsert per hourly
+   * bucket the trie holds (at most this hour and the previous one). Writing the
+   * previous hour too matters when a search at 10:59 is flushed at 11:00.
+   */
+  private async writeBatch(keys: string[]): Promise<void> {
     const startTime = Date.now();
-    const currentHour = Math.floor(Date.now() / 3600000) * 3600000;
+    await dbRun('BEGIN TRANSACTION');
+    try {
+      for (const query of keys) {
+        // Read current aggregated values directly from the in-memory Trie
+        await dbRun('INSERT OR REPLACE INTO queries (query, count) VALUES (?, ?)', [
+          query,
+          this.trie.getCount(query),
+        ]);
+        metrics.dbWrites++;
 
-    console.log(`Flushing batch of ${keysToFlush.length} unique queries to database...`);
-
-    return new Promise<void>((resolve, reject) => {
-      db.serialize(() => {
-        db.run('BEGIN TRANSACTION');
-
-        const stmtQueries = db.prepare('INSERT OR REPLACE INTO queries (query, count) VALUES (?, ?)');
-        const stmtBuckets = db.prepare('INSERT OR REPLACE INTO query_buckets (query, hour_timestamp, count) VALUES (?, ?, ?)');
-
-        keysToFlush.forEach(query => {
-          // Read current aggregated metrics directly from the in-memory Trie
-          const allTimeCount = this.trie.getCount(query);
-          const recentCounts = this.trie.getRecentCounts(query);
-          const hourCount = recentCounts.get(currentHour) || 0;
-
-          // Record database writes
-          metrics.dbWrites += 2; // Incremented for both queries and query_buckets upserts
-          
-          stmtQueries.run(query, allTimeCount);
-          stmtBuckets.run(query, currentHour, hourCount);
-        });
-
-        stmtQueries.finalize();
-        stmtBuckets.finalize();
-
-        db.run('COMMIT', (err) => {
-          if (err) {
-            console.error('Batch write commit failed, rolling back:', err);
-            db.run('ROLLBACK');
-            reject(err);
-          } else {
-            const duration = Date.now() - startTime;
-            console.log(`Batch write completed: flushed ${keysToFlush.length} items in ${duration}ms.`);
-            resolve();
-          }
-        });
-      });
-    });
+        for (const [hour, count] of this.trie.getRecentCounts(query)) {
+          await dbRun(
+            'INSERT OR REPLACE INTO query_buckets (query, hour_timestamp, count) VALUES (?, ?, ?)',
+            [query, hour, count]
+          );
+          metrics.dbWrites++;
+        }
+      }
+      await dbRun('COMMIT');
+    } catch (err) {
+      console.error('Batch write failed, rolling back:', err);
+      await dbRun('ROLLBACK').catch(() => {});
+      throw err;
+    }
+    if (process.env.NODE_ENV !== 'test') {
+      console.log(`Flushed ${keys.length} queries in ${Date.now() - startTime}ms.`);
+    }
   }
 
   /**

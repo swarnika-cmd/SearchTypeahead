@@ -91,10 +91,12 @@ describe('SearchBuffer Write-Behind Aggregator', () => {
     const startDbWrites = metrics.dbWrites;
 
     // Simulate 5 client searches for the same query "python"
+    // (like POST /search: all-time count and this hour's bucket both go up)
+    const hour = Math.floor(Date.now() / 3600000) * 3600000;
     for (let i = 1; i <= 5; i++) {
       metrics.searchesSubmitted++;
-      trie.insert('python', i); // increment trie count
-      buffer.add('python');     // mark key as dirty
+      trie.insert('python', i, new Map([[hour, i]])); // increment trie count
+      buffer.add('python');                           // mark key as dirty
     }
 
     // Flush the buffer containing duplicate updates
@@ -109,5 +111,67 @@ describe('SearchBuffer Write-Behind Aggregator', () => {
     // rather than +10 (for 5 searches write-throughs)
     const dbWritesAdded = metrics.dbWrites - startDbWrites;
     expect(dbWritesAdded).toBe(2);
+  });
+  test('a failed flush keeps the keys so the next flush retries them', async () => {
+    const hour = Math.floor(Date.now() / 3600000) * 3600000;
+    trie.insert('swift', 3, new Map([[hour, 3]]));
+    buffer.add('swift');
+
+    // Make the write fail: the bucket table is gone
+    await dbRun('DROP TABLE query_buckets');
+    await expect(buffer.flush()).rejects.toThrow();
+
+    // Nothing half-written, and the key is still waiting
+    expect(await dbAll('SELECT * FROM queries')).toHaveLength(0);
+    expect(buffer.getBufferSize()).toBe(1);
+
+    // Once the table is back, the retry succeeds
+    await initDb();
+    await buffer.flush();
+    expect(await dbAll('SELECT * FROM queries')).toEqual([{ query: 'swift', count: 3 }]);
+  });
+
+  test('writes the bucket of the hour the search happened in, even when flushed an hour later', async () => {
+    const realNow = Date.now();
+    const hour = Math.floor(realNow / 3600000) * 3600000;
+    trie.insert('scala', 2, new Map([[hour, 2]]));
+    buffer.add('scala');
+
+    // Flush runs just after the hour boundary (search at 10:59, flush at 11:00)
+    const spy = jest.spyOn(Date, 'now').mockReturnValue(hour + 3600000 + 1000);
+    await buffer.flush();
+    spy.mockRestore();
+
+    const buckets = await dbAll('SELECT hour_timestamp, count FROM query_buckets WHERE query = ?', ['scala']);
+    expect(buckets).toEqual([{ hour_timestamp: hour, count: 2 }]);
+  });
+
+  test('two overlapping flushes both complete without nesting transactions', async () => {
+    trie.insert('alpha', 1);
+    trie.insert('beta', 2);
+    buffer.add('alpha');
+    const first = buffer.flush();
+    buffer.add('beta');
+    const second = buffer.flush();
+
+    await Promise.all([first, second]);
+    const rows = await dbAll('SELECT * FROM queries ORDER BY query');
+    expect(rows).toEqual([{ query: 'alpha', count: 1 }, { query: 'beta', count: 2 }]);
+  });
+
+  test('shutdown() stops the timer and flushes everything still buffered', async () => {
+    buffer.start();
+    trie.insert('elixir', 4);
+    buffer.add('elixir');
+
+    await buffer.shutdown();
+    expect(await dbAll('SELECT * FROM queries')).toEqual([{ query: 'elixir', count: 4 }]);
+    expect(buffer.getBufferSize()).toBe(0);
+
+    // Timer is stopped: a later add is not flushed automatically
+    trie.insert('erlang', 1);
+    buffer.add('erlang');
+    await new Promise(resolve => setTimeout(resolve, 150));
+    expect(await dbAll('SELECT * FROM queries WHERE query = ?', ['erlang'])).toHaveLength(0);
   });
 });
