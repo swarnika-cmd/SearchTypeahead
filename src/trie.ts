@@ -21,7 +21,9 @@ export class TrieNode {
   children: Array<TrieNode | null>;
   isEndOfWord: boolean;
   count: number; // all-time count
-  recentCounts: Map<number, number>; // Map of hour_timestamp -> count
+  // hour_timestamp -> count. Only nodes where a query ends need one, so it stays
+  // null elsewhere (an empty Map costs ~190 bytes, times millions of nodes).
+  recentCounts: Map<number, number> | null;
   topSuggestions: Suggestion[]; // sorted by count descending (basic mode)
   topTrendingSuggestions: Suggestion[]; // sorted by score descending (trending mode)
 
@@ -29,7 +31,7 @@ export class TrieNode {
     this.children = new Array(37).fill(null);
     this.isEndOfWord = false;
     this.count = 0;
-    this.recentCounts = new Map();
+    this.recentCounts = null;
     this.topSuggestions = [];
     this.topTrendingSuggestions = [];
   }
@@ -209,7 +211,7 @@ export class Trie {
     const result: Array<{ query: string; count: number; recentCounts: Map<number, number> }> = [];
     const walk = (node: TrieNode, path: string) => {
       if (node.isEndOfWord) {
-        result.push({ query: path, count: node.count, recentCounts: node.recentCounts });
+        result.push({ query: path, count: node.count, recentCounts: node.recentCounts ?? new Map() });
       }
       for (let i = 0; i < 37; i++) {
         const child = node.children[i];
@@ -264,6 +266,6 @@ export class Trie {
       node = node.children[idx]!;
     }
 
-    return node.isEndOfWord ? node.recentCounts : new Map();
+    return node.isEndOfWord && node.recentCounts ? node.recentCounts : new Map();
   }
 }
