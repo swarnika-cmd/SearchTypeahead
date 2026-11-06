@@ -1,5 +1,7 @@
-class MetricsTracker {
+export class MetricsTracker {
+  // Most recent 10,000 suggestion latencies (ms), used for p95
   private latencies: number[] = [];
+  public totalRequests = 0;
   public cacheHits = 0;
   public cacheMisses = 0;
   public dbReads = 0;
@@ -10,6 +12,7 @@ class MetricsTracker {
    * Records a latency measurement in milliseconds.
    */
   recordLatency(ms: number): void {
+    this.totalRequests++;
     this.latencies.push(ms);
     // Limit array size to prevent memory leaks in production-like tests
     if (this.latencies.length > 10000) {
@@ -18,7 +21,7 @@ class MetricsTracker {
   }
 
   /**
-   * Computes the 95th percentile (p95) latency of recorded suggestion requests.
+   * Computes the 95th percentile (p95) latency over the last 10,000 suggestion requests.
    */
   getP95Latency(): number {
     if (this.latencies.length === 0) return 0;
@@ -47,7 +50,7 @@ class MetricsTracker {
       dbReads: this.dbReads,
       dbWrites: this.dbWrites,
       searchesSubmitted: this.searchesSubmitted,
-      totalRequests: this.latencies.length,
+      totalRequests: this.totalRequests,
     };
   }
 }
