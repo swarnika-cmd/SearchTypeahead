@@ -123,4 +123,23 @@ describe('Trie Prefix Suggestion System', () => {
     const trending = trie.getSuggestions('ap', 'trending');
     expect(trending[0].query).toBe('apricot');
   });
+  test('refreshScores recomputes trending order for a new hour and drops old buckets', () => {
+    const realNow = Date.now();
+    const hour = Math.floor(realNow / 3600000) * 3600000;
+
+    // 'apricot' is hot this hour, 'apple' has more all-time searches
+    trie.insert('apple', 10000);
+    trie.insert('apricot', 10, new Map([[hour - 7200000, 99], [hour, 60]]));
+    expect(trie.getSuggestions('ap', 'trending')[0].query).toBe('apricot');
+    expect(trie.entries().map(e => e.query).sort()).toEqual(['apple', 'apricot']);
+
+    // Two hours later the 60 searches no longer count: apple (500) wins again
+    const spy = jest.spyOn(Date, 'now').mockReturnValue(realNow + 2 * 3600000);
+    trie.refreshScores();
+    spy.mockRestore();
+
+    expect(trie.getSuggestions('ap', 'trending')[0].query).toBe('apple');
+    expect(trie.getCount('apricot')).toBe(10);
+    expect(trie.getRecentCounts('apricot').size).toBe(0);
+  });
 });

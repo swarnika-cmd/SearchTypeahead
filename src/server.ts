@@ -1,6 +1,6 @@
 import express from 'express';
 import path from 'path';
-import { Trie, TrieNode } from './trie';
+import { Trie, hourStart } from './trie';
 import { dbAll, initDb, dbRun } from './db';
 import { metrics } from './metrics';
 import { HashRing, CacheNode, hashKey } from './cache';
@@ -28,20 +28,18 @@ cacheNodes.forEach(node => {
   cacheInstances.set(node, new CacheNode(node));
 });
 
-// Keep track of the last hour the Trie was rebuilt
-let lastTrieBuildHour = 0;
+// The hour that the trending scores in the trie were computed for
+let scoredForHour = 0;
 
 /**
- * Rebuilds the in-memory Trie from SQLite data.
- * Merges historical all-time counts and recent hourly bucket counts
- * to calculate decayed scores.
+ * Loads the Trie from SQLite. Called once at startup (and by tests).
+ * Merges all-time counts and recent hourly bucket counts to compute trending scores.
+ * The new trie is built on the side and swapped in at the end, so readers never
+ * see a half-loaded trie.
  */
 export async function rebuildTrie(): Promise<void> {
   console.log('Rebuilding in-memory Trie from SQLite data...');
   const startTime = Date.now();
-
-  // Clear existing Trie root to purge deleted entries
-  trie.root = new TrieNode();
 
   // Fetch all-time query counts
   metrics.dbReads++;
@@ -49,7 +47,7 @@ export async function rebuildTrie(): Promise<void> {
 
   // Fetch only relevant recent buckets (current hour and previous hour)
   // to avoid loading expired historical data into memory
-  const currentHour = Math.floor(Date.now() / 3600000) * 3600000;
+  const currentHour = hourStart();
   const prevHour = currentHour - 3600000;
 
   metrics.dbReads++;
@@ -67,13 +65,17 @@ export async function rebuildTrie(): Promise<void> {
     queryBucketsMap.get(row.query)!.set(row.hour_timestamp, row.count);
   });
 
-  // Re-insert all queries with their counts and recent bucket mapping into Trie
+  // Insert all queries with their counts and recent buckets into a fresh Trie
+  const fresh = new Trie();
   queries.forEach(row => {
     const recentMap = queryBucketsMap.get(row.query) || new Map();
-    trie.insert(row.query, row.count, recentMap);
+    fresh.insert(row.query, row.count, recentMap);
   });
+  trie.root = fresh.root;
 
-  lastTrieBuildHour = currentHour;
+  // Cached lists came from the old trie
+  cacheInstances.forEach(cache => cache.clear());
+  scoredForHour = currentHour;
   const durationSec = ((Date.now() - startTime) / 1000).toFixed(2);
   console.log(`Trie rebuilt successfully: ${queries.length} queries loaded in ${durationSec}s.`);
 }
@@ -95,6 +97,19 @@ function readText(value: unknown): { text: string } | { error: string } {
   return { text };
 }
 
+/**
+ * Trending scores use "this hour" and "previous hour" buckets, so when the clock
+ * moves into a new hour every score changes. The first request of a new hour
+ * recomputes them in memory and empties the cache (which holds last hour's lists).
+ */
+function refreshScoresIfNewHour(): void {
+  const hour = hourStart();
+  if (hour === scoredForHour) return;
+  trie.refreshScores();
+  cacheInstances.forEach(cache => cache.clear());
+  scoredForHour = hour;
+}
+
 app.use(express.json());
 // Serve frontend static files from the 'public' directory
 app.use(express.static(path.join(__dirname, '../public')));
@@ -106,7 +121,7 @@ app.use(express.static(path.join(__dirname, '../public')));
  *   - mode=basic | trending (defaults to trending)
  * Returns: Array of top 10 suggestions matching the prefix.
  */
-app.get('/suggest', async (req, res) => {
+app.get('/suggest', (req, res) => {
   const startTime = process.hrtime.bigint();
 
   const parsed = readText(req.query.q);
@@ -122,11 +137,8 @@ app.get('/suggest', async (req, res) => {
   const mode: 'basic' | 'trending' = modeParam;
 
   try {
-    // 1. Lazy check for hour-transition to rebuild Trie and recompute scores
-    const currentHour = Math.floor(Date.now() / 3600000) * 3600000;
-    if (currentHour !== lastTrieBuildHour) {
-      await rebuildTrie();
-    }
+    // 1. Lazy check for a new hour: recompute trending scores in memory
+    refreshScoresIfNewHour();
 
     // 2. Consistent hashing routing (route based on prefix only)
     const targetNodeName = hashRing.getNode(sanitized);
@@ -216,7 +228,8 @@ app.post('/search', async (req, res) => {
   const sanitizedQuery = parsed.text;
 
   try {
-    const currentHour = Math.floor(Date.now() / 3600000) * 3600000;
+    refreshScoresIfNewHour();
+    const currentHour = hourStart();
 
     // 1. Increment client submission counter
     metrics.searchesSubmitted++;

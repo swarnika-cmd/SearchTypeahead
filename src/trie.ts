@@ -1,5 +1,15 @@
 import { normalizeQuery } from './normalize';
 
+const HOUR_MS = 3600000;
+
+/** Start of the hour (epoch ms) that `time` falls in. Hourly buckets are keyed by this. */
+export function hourStart(time: number = Date.now()): number {
+  return Math.floor(time / HOUR_MS) * HOUR_MS;
+}
+
+// Character for each child slot, so a stored query can be rebuilt from its path.
+const ALPHABET = 'abcdefghijklmnopqrstuvwxyz0123456789 ';
+
 export interface Suggestion {
   query: string;
   count: number;
@@ -64,9 +74,9 @@ export class Trie {
    * Formula: Score = 10 * current_hour_count + 5 * previous_hour_count + 0.05 * all_time_count
    */
   public getDecayedScore(allTimeCount: number, recentCounts: Map<number, number>): number {
-    const currentHour = Math.floor(Date.now() / 3600000) * 3600000;
-    const prevHour = currentHour - 3600000;
-    
+    const currentHour = hourStart();
+    const prevHour = currentHour - HOUR_MS;
+
     const countCurrent = recentCounts.get(currentHour) || 0;
     const countPrev = recentCounts.get(prevHour) || 0;
 
@@ -183,6 +193,53 @@ export class Trie {
     }
 
     return node.isEndOfWord ? node.count : 0;
+  }
+
+  /**
+   * Returns every stored query with its counts, using a depth-first walk.
+   * The query text is rebuilt from the child slots on the path.
+   * O(number of trie nodes).
+   */
+  entries(): Array<{ query: string; count: number; recentCounts: Map<number, number> }> {
+    const result: Array<{ query: string; count: number; recentCounts: Map<number, number> }> = [];
+    const walk = (node: TrieNode, path: string) => {
+      if (node.isEndOfWord) {
+        result.push({ query: path, count: node.count, recentCounts: node.recentCounts });
+      }
+      for (let i = 0; i < 37; i++) {
+        const child = node.children[i];
+        if (child) walk(child, path + ALPHABET[i]);
+      }
+    };
+    walk(this.root, '');
+    return result;
+  }
+
+  /**
+   * Recomputes every trending score for the current hour.
+   *
+   * A score only depends on the current and previous hour buckets, so it can
+   * only go stale when the hour changes. The server calls this once per hour.
+   * Buckets older than the previous hour no longer affect the score and are dropped.
+   *
+   * It rebuilds the trie from its own entries (not from SQLite), so searches that
+   * are still waiting in the write-behind buffer are kept. It is synchronous, so
+   * no request can observe a half-built trie.
+   */
+  refreshScores(): void {
+    const currentHour = hourStart();
+    const prevHour = currentHour - HOUR_MS;
+    const all = this.entries();
+
+    this.root = new TrieNode();
+    for (const entry of all) {
+      const recent = new Map<number, number>();
+      for (const hour of [prevHour, currentHour]) {
+        const count = entry.recentCounts.get(hour);
+        if (count) recent.set(hour, count);
+      }
+      this.insert(entry.query, entry.count, recent);
+    }
   }
 
   /**
