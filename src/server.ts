@@ -294,9 +294,10 @@ async function startServer() {
     // Auto-seed if the queries database is empty (essential for fresh deployments like Render)
     const rows = await dbAll('SELECT COUNT(*) as count FROM queries');
     if (!rows || rows.length === 0 || rows[0].count === 0) {
-      console.log('Queries database is empty. Auto-seeding Zipf queries...');
+      const seedTerms = Number(process.env.SEED_TERMS) || 105000;
+      console.log(`Queries database is empty. Auto-seeding ${seedTerms} Zipf queries...`);
       const { runSeeder } = require('./seed');
-      await runSeeder(105000);
+      await runSeeder(seedTerms);
     }
 
     // 2. Rebuild Trie (loads queries from DB)

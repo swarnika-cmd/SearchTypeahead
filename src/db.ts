@@ -1,7 +1,7 @@
 import sqlite3 from 'sqlite3';
 
-// Connect to in-memory DB during tests to ensure isolation, otherwise typeahead.db local file
-const dbPath = process.env.NODE_ENV === 'test' ? ':memory:' : 'typeahead.db';
+// In-memory DB during tests for isolation; otherwise DB_PATH or ./typeahead.db
+const dbPath = process.env.NODE_ENV === 'test' ? ':memory:' : process.env.DB_PATH || 'typeahead.db';
 const db = new sqlite3.Database(dbPath);
 
 /**
