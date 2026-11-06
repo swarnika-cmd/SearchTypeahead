@@ -2,8 +2,9 @@ import crypto from 'crypto';
 import { Suggestion } from './trie';
 
 /**
- * 32-bit FNV-1a Hash function for fast hashing.
- * Converts string keys into 32-bit unsigned integers.
+ * Hashes a string to a 32-bit unsigned integer: the first 4 bytes of its MD5 digest.
+ * MD5 is used for its even spread of outputs, not for security.
+ * Both cache keys and virtual node names are placed on the ring with this function.
  */
 export function hashKey(key: string): number {
   const hash = crypto.createHash('md5').update(key).digest();
