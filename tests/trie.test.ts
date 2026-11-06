@@ -87,6 +87,16 @@ describe('Trie Prefix Suggestion System', () => {
     expect(suggestions.map(s => s.query)).toEqual(['c']);
   });
 
+  test('a trailing space in the prefix means the word is finished', () => {
+    trie.insert('iphone 15', 500);
+    trie.insert('iphones', 900);
+
+    // 'iphone' matches both, 'iphone ' only matches the multi-word query
+    expect(trie.getSuggestions('iphone').map(s => s.query)).toEqual(['iphones', 'iphone 15']);
+    expect(trie.getSuggestions('iphone ').map(s => s.query)).toEqual(['iphone 15']);
+    expect(trie.getSuggestions('IPHONE   ').map(s => s.query)).toEqual(['iphone 15']);
+  });
+
   test('should perform stable lexicographical sorting when counts are equal', () => {
     trie.insert('apricot', 50);
     trie.insert('apple', 50);

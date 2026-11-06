@@ -1,4 +1,4 @@
-import { normalizeQuery } from './normalize';
+import { normalizeQuery, normalizePrefix } from './normalize';
 
 const HOUR_MS = 3600000;
 
@@ -157,7 +157,7 @@ export class Trie {
    * Returns a copy, so callers (and the cache) cannot change the trie's own lists.
    */
   getSuggestions(prefix: string, mode: 'basic' | 'trending' = 'trending'): Suggestion[] {
-    const sanitized = this.sanitize(prefix);
+    const sanitized = normalizePrefix(prefix);
     
     // Select root node suggestions if prefix is empty
     if (!sanitized) {

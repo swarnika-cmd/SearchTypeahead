@@ -5,7 +5,7 @@ import { dbAll, initDb, closeDb } from './db';
 import { metrics } from './metrics';
 import { HashRing, CacheNode, hashKey } from './cache';
 import { SearchBuffer } from './buffer';
-import { normalizeQuery, MAX_QUERY_LENGTH } from './normalize';
+import { normalizeQuery, normalizePrefix, MAX_QUERY_LENGTH } from './normalize';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -86,11 +86,16 @@ export async function rebuildTrie(): Promise<void> {
  * sent more than once (Express turns ?q=a&q=b into an array), not a string,
  * or longer than MAX_QUERY_LENGTH after normalisation.
  * A missing value counts as an empty string.
+ * `normalize` is normalizePrefix for prefixes (keeps a trailing space) and
+ * normalizeQuery for full queries.
  */
-function readText(value: unknown): { text: string } | { error: string } {
+function readText(
+  value: unknown,
+  normalize: (raw: string) => string = normalizeQuery
+): { text: string } | { error: string } {
   if (value === undefined) return { text: '' };
   if (typeof value !== 'string') return { error: 'must be a single string' };
-  const text = normalizeQuery(value);
+  const text = normalize(value);
   if (text.length > MAX_QUERY_LENGTH) {
     return { error: `must be at most ${MAX_QUERY_LENGTH} characters` };
   }
@@ -138,7 +143,7 @@ app.use(express.static(path.join(__dirname, '../public')));
 app.get('/suggest', (req, res) => {
   const startTime = process.hrtime.bigint();
 
-  const parsed = readText(req.query.q);
+  const parsed = readText(req.query.q, normalizePrefix);
   if ('error' in parsed) {
     return res.status(400).json({ error: `q ${parsed.error}` });
   }
@@ -194,7 +199,7 @@ app.get('/suggest', (req, res) => {
  *          and snapshots of active cached keys.
  */
 app.get('/cache/debug', (req, res) => {
-  const parsed = readText(req.query.prefix);
+  const parsed = readText(req.query.prefix, normalizePrefix);
   if ('error' in parsed) {
     return res.status(400).json({ error: `prefix ${parsed.error}` });
   }
