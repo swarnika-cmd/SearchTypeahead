@@ -105,7 +105,7 @@ describe('Server API Suggestion Route Integration Tests', () => {
   });
 
   test('GET /cache/debug should return correct routing and status', async () => {
-    const debugPrefix = 'debug-prefix';
+    const debugPrefix = 'debugprefix';
     
     // First, check status on debug, should be a miss
     const res1 = await request(app).get(`/cache/debug?prefix=${debugPrefix}`);

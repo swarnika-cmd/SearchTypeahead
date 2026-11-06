@@ -5,6 +5,7 @@ import { dbAll, initDb, dbRun } from './db';
 import { metrics } from './metrics';
 import { HashRing, CacheNode, hashKey } from './cache';
 import { SearchBuffer } from './buffer';
+import { normalizeQuery, MAX_QUERY_LENGTH } from './normalize';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -77,6 +78,23 @@ export async function rebuildTrie(): Promise<void> {
   console.log(`Trie rebuilt successfully: ${queries.length} queries loaded in ${durationSec}s.`);
 }
 
+/**
+ * Reads a text parameter sent by the client (query string or JSON body).
+ * Returns the normalised text, or an error message when the value is unusable:
+ * sent more than once (Express turns ?q=a&q=b into an array), not a string,
+ * or longer than MAX_QUERY_LENGTH after normalisation.
+ * A missing value counts as an empty string.
+ */
+function readText(value: unknown): { text: string } | { error: string } {
+  if (value === undefined) return { text: '' };
+  if (typeof value !== 'string') return { error: 'must be a single string' };
+  const text = normalizeQuery(value);
+  if (text.length > MAX_QUERY_LENGTH) {
+    return { error: `must be at most ${MAX_QUERY_LENGTH} characters` };
+  }
+  return { text };
+}
+
 app.use(express.json());
 // Serve frontend static files from the 'public' directory
 app.use(express.static(path.join(__dirname, '../public')));
@@ -90,10 +108,19 @@ app.use(express.static(path.join(__dirname, '../public')));
  */
 app.get('/suggest', async (req, res) => {
   const startTime = process.hrtime.bigint();
-  const prefix = (req.query.q as string) || '';
-  const mode = (req.query.mode as 'basic' | 'trending') || 'trending';
-  const sanitized = prefix.toLowerCase().trim();
-  
+
+  const parsed = readText(req.query.q);
+  if ('error' in parsed) {
+    return res.status(400).json({ error: `q ${parsed.error}` });
+  }
+  const sanitized = parsed.text;
+
+  const modeParam = req.query.mode ?? 'trending';
+  if (modeParam !== 'basic' && modeParam !== 'trending') {
+    return res.status(400).json({ error: "mode must be 'basic' or 'trending'" });
+  }
+  const mode: 'basic' | 'trending' = modeParam;
+
   try {
     // 1. Lazy check for hour-transition to rebuild Trie and recompute scores
     const currentHour = Math.floor(Date.now() / 3600000) * 3600000;
@@ -141,8 +168,11 @@ app.get('/suggest', async (req, res) => {
  *          and snapshots of active cached keys.
  */
 app.get('/cache/debug', (req, res) => {
-  const prefix = (req.query.prefix as string) || '';
-  const sanitized = prefix.toLowerCase().trim();
+  const parsed = readText(req.query.prefix);
+  if ('error' in parsed) {
+    return res.status(400).json({ error: `prefix ${parsed.error}` });
+  }
+  const sanitized = parsed.text;
 
   try {
     const targetNodeName = hashRing.getNode(sanitized);
@@ -170,13 +200,20 @@ app.get('/cache/debug', (req, res) => {
  *           updates the in-memory Trie, and returns a confirmation message.
  */
 app.post('/search', async (req, res) => {
-  const { query } = req.body;
-  
-  if (!query || typeof query !== 'string' || !query.trim()) {
+  // req.body is undefined when the request has no JSON body
+  const query = req.body?.query;
+  if (typeof query !== 'string') {
     return res.status(400).json({ error: 'Invalid search query' });
   }
-
-  const sanitizedQuery = query.toLowerCase().trim();
+  const parsed = readText(query);
+  if ('error' in parsed) {
+    return res.status(400).json({ error: `query ${parsed.error}` });
+  }
+  if (!parsed.text) {
+    // Empty, or only punctuation/whitespace
+    return res.status(400).json({ error: 'Invalid search query' });
+  }
+  const sanitizedQuery = parsed.text;
 
   try {
     const currentHour = Math.floor(Date.now() / 3600000) * 3600000;
