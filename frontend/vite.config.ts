@@ -7,6 +7,8 @@ export default defineConfig({
   server: {
     proxy: {
       '/suggest': 'http://localhost:3000',
+      '/search': 'http://localhost:3000',
+      '/cache': 'http://localhost:3000',
       '/api': 'http://localhost:3000',
     }
   },
