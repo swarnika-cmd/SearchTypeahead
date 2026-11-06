@@ -4,3 +4,6 @@ dist/
 *.db-journal
 _git_backup_/
 .env
+
+# Frontend build output (npm run build:frontend writes here)
+/public/

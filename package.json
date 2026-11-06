@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "build:frontend": "npm install --prefix frontend && npm run build --prefix frontend",
+    "build:frontend": "npm ci --prefix frontend && npm run build --prefix frontend",
     "build:backend": "tsc",
     "build": "npm run build:frontend && npm run build:backend",
     "start": "node dist/server.js",
