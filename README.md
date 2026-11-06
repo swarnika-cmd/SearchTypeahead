@@ -1,6 +1,6 @@
 # Aura Search: search-as-you-type with a top-K trie
 
-A search typeahead (autocomplete) service built for a High-Level Design assignment. As the user types, the server returns the 10 best completions for the current prefix, ranked either by all-time popularity or by a "trending" score that favours recent searches.
+A search typeahead (autocomplete) service, built to work through the design of search-as-you-type end to end. As the user types, the server returns the 10 best completions for the current prefix, ranked either by all-time popularity or by a "trending" score that favours recent searches.
 
 It is a single Node.js process. Inside it:
 
@@ -104,7 +104,7 @@ Counts are kept per hour bucket (`hour_timestamp → count`). This is a step dec
 
 ### Why the ring is simulated in-process
 
-The assignment is about the design. One process makes it easy to run, test and demo, and the ring code is the same as a client-side ring would be in a real deployment. `/cache/debug` shows which node owns a prefix. The tests check the property that matters: with 10,000 keys, adding a fourth node moves 26% of keys (ideal 25%), all of them to the new node. Modulo hashing (`hash % N`) would move 74%.
+The focus is the design. One process makes it easy to run, test and demo, and the ring code is the same as a client-side ring would be in a real deployment. `/cache/debug` shows which node owns a prefix. The tests check the property that matters: with 10,000 keys, adding a fourth node moves 26% of keys (ideal 25%), all of them to the new node. Modulo hashing (`hash % N`) would move 74%.
 
 With 50 virtual nodes per server the spread is not perfectly even: with 4 nodes, each owns between 19% and 31% of keys (ideal 25%). With 200 virtual nodes, the busiest of 3 nodes carries 12% more than its fair share. More virtual nodes cost a bigger ring array, but lookups are still a binary search.
 
