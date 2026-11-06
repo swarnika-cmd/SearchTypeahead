@@ -10,7 +10,7 @@ export const runSeeder = async (numQueries = 105000, seed = 42): Promise<void> =
   await initDb();
 
   const dataset = generateDataset(numQueries, seed);
-  console.log(`Generated ${dataset.length} unique queries with Zipf counts.`);
+  console.log(`Built ${dataset.length} unique queries with Zipf counts.`);
 
   console.log('Inserting into database via transaction...');
   const startTime = Date.now();
@@ -37,7 +37,7 @@ export const runSeeder = async (numQueries = 105000, seed = 42): Promise<void> =
           console.log(`Successfully seeded ${dataset.length} queries in ${duration} seconds.`);
           
           // Print sample of top queries
-          console.log('\nTop 5 generated queries:');
+          console.log('\nTop 5 queries by count:');
           dataset.slice(0, 5).forEach((item, i) => {
             console.log(`  Rank ${i + 1}: "${item.query}" (Count: ${item.count})`);
           });
