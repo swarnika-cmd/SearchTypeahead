@@ -8,7 +8,8 @@
     "build": "npm run build:frontend && npm run build:backend",
     "start": "node dist/server.js",
     "seed": "ts-node src/seed.ts",
-    "test": "jest"
+    "test": "jest",
+    "typecheck": "tsc --noEmit -p tsconfig.test.json"
   },
   "keywords": [],
   "author": "",
