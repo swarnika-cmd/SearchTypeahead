@@ -110,6 +110,20 @@ function refreshScoresIfNewHour(): void {
   scoredForHour = hour;
 }
 
+/**
+ * A search changes the counts for every prefix of the query ('', 'k', 'ko', ...),
+ * so the cached lists for those prefixes are now stale. Delete them (both modes)
+ * so the next read goes to the trie. Costs one hash-ring lookup per prefix.
+ */
+function invalidatePrefixes(query: string): void {
+  for (let len = 0; len <= query.length; len++) {
+    const prefix = query.slice(0, len);
+    const cacheNode = cacheInstances.get(hashRing.getNode(prefix))!;
+    cacheNode.delete(`${prefix}:basic`);
+    cacheNode.delete(`${prefix}:trending`);
+  }
+}
+
 app.use(express.json());
 // Serve frontend static files from the 'public' directory
 app.use(express.static(path.join(__dirname, '../public')));
@@ -244,6 +258,7 @@ app.post('/search', async (req, res) => {
 
     // 3. Update the in-memory Trie immediately so autocomplete reflects changes instantly
     trie.insert(sanitizedQuery, newCount, recentCounts);
+    invalidatePrefixes(sanitizedQuery);
 
     // 4. Mark query as dirty to flush asynchronously in background batch
     searchBuffer.add(sanitizedQuery);

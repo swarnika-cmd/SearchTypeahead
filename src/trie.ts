@@ -154,13 +154,14 @@ export class Trie {
   /**
    * Fetches the top 10 suggestions for a given prefix in O(L) time.
    * Supports 'basic' (popularity) and 'trending' (recency-decayed) sorting modes.
+   * Returns a copy, so callers (and the cache) cannot change the trie's own lists.
    */
   getSuggestions(prefix: string, mode: 'basic' | 'trending' = 'trending'): Suggestion[] {
     const sanitized = this.sanitize(prefix);
     
     // Select root node suggestions if prefix is empty
     if (!sanitized) {
-      return mode === 'trending' ? this.root.topTrendingSuggestions : this.root.topSuggestions;
+      return this.copyList(mode === 'trending' ? this.root.topTrendingSuggestions : this.root.topSuggestions);
     }
 
     let node = this.root;
@@ -172,7 +173,11 @@ export class Trie {
       node = node.children[idx]!;
     }
 
-    return mode === 'trending' ? node.topTrendingSuggestions : node.topSuggestions;
+    return this.copyList(mode === 'trending' ? node.topTrendingSuggestions : node.topSuggestions);
+  }
+
+  private copyList(list: Suggestion[]): Suggestion[] {
+    return list.map(s => ({ ...s }));
   }
 
   /**

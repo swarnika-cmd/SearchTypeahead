@@ -124,6 +124,28 @@ describe('Server API Suggestion Route Integration Tests', () => {
     expect(res2.body.activeKeysOnNode).toContain(`${debugPrefix}:trending`);
   });
 
+  test('POST /search invalidates cached suggestions for every prefix of the query', async () => {
+    // Cache the (empty) lists for 'zeb' in both modes
+    expect((await request(app).get('/suggest?q=zeb')).body.suggestions).toEqual([]);
+    expect((await request(app).get('/suggest?q=zeb&mode=basic')).body.suggestions).toEqual([]);
+
+    await request(app).post('/search').send({ query: 'zebra crossing' });
+
+    // Within the 10s TTL the cached empty lists must not be served any more
+    const trending = await request(app).get('/suggest?q=zeb');
+    expect(trending.body.suggestions.map((s: any) => s.query)).toEqual(['zebra crossing']);
+    const basic = await request(app).get('/suggest?q=zeb&mode=basic');
+    expect(basic.body.suggestions).toEqual([{ query: 'zebra crossing', count: 1 }]);
+  });
+
+  test('cached lists are snapshots, not live references into the trie', async () => {
+    await request(app).get('/suggest?q=rust&mode=basic'); // cache it
+    const fromTrie = trie.getSuggestions('rust', 'basic');
+    fromTrie.push({ query: 'mutated', count: 1 });
+    const res = await request(app).get('/suggest?q=rust&mode=basic');
+    expect(res.body.suggestions.map((s: any) => s.query)).toEqual(['rust design']);
+  });
+
   afterAll(async () => {
     await closeDb();
   });
