@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+- **Radix trie (default).** Nodes store an edge label and keep their children in a small sorted array, instead of one node per character with a 37-slot child array. Each stored query has one shared entry object that all its lists point to. The methods of `Trie` are unchanged; `root` is now opaque (typed `object`). Design and per-node estimate: `docs/MEMORY_V3.md`.
+- The original array trie is kept as `ArrayTrie` (`src/trie-array.ts`). `TRIE_IMPL=array` selects it, `TRIE_IMPL=radix` (default) the new one.
+- `bash bench/run-trie.sh` now runs both implementations in one invocation (each in its own process) and writes `bench/results/trie-bench-v3.json` and `.md`. The container is capped at 7 GB.
+- The trie benchmark keeps the generated data set reachable while it measures heap, so the data set's size is no longer subtracted from the trie's heap. The heap figures in `trie-bench-full.json` were slightly too low for that reason.
+
+### Added
+- `tests/trie-impls.test.ts`: brute-force top-10 comparison against both tries on seeded data (mid-edge prefixes, no-match prefixes, both modes, an hour change), prefix-split cases, and array/radix agreement.
+- `bench/trie-shape.ts` (node counts without building a trie) and `bench/v8-unit-costs.ts` (per-structure heap costs on this Node build, written to `bench/results/v8-unit-costs.json`).
+
 ## v2.0.0 (Nov 2026)
 
 ### Fixed

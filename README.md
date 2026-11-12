@@ -4,7 +4,7 @@ A search typeahead (autocomplete) service, built to work through the design of s
 
 It is a single Node.js process. Inside it:
 
-- a **trie with a 37-slot child array and a precomputed top-10 list on every node**, so a lookup is a walk of the prefix and nothing else
+- a **radix (path-compressed) trie with sorted child arrays and a precomputed top-10 list on every node**, so a lookup is a walk of the prefix and nothing else. The original 37-slot array trie is kept as a baseline, see [Radix trie instead of a 37-slot array](#radix-trie-instead-of-a-37-slot-array)
 - a **consistent-hash ring with virtual nodes** that routes each prefix to one of three cache nodes. These are simulated in the same process, see [Why the ring is simulated in-process](#why-the-ring-is-simulated-in-process)
 - a **write-behind buffer** that collects search counts in memory and writes them to SQLite in one transaction every 5 s or every 50 distinct queries
 - a React dashboard showing suggestions, cache routing and live metrics
@@ -75,15 +75,27 @@ K = 10. Reads are far more frequent than writes in typeahead, so moving the sort
 
 The lists stay correct because counts only go up between rebuilds. A query that was pushed out of a node's top 10 can only come back by being searched again, and that search re-inserts it. If counts could go down, a node would need its 11th-best entry, which it no longer stores. Scores do go down when the hour changes, and that is why the whole trie is rebuilt then. `tests/trie-property.test.ts` checks every prefix against a brute-force sort on random data, before and after an hour change.
 
-### 37-slot array instead of a `Map` for children
+### Radix trie instead of a 37-slot array
 
-Each node has `children = new Array(37)`: slots 0-25 for `a-z`, 26-35 for `0-9`, 36 for space.
+The first version (`src/trie-array.ts`, class `ArrayTrie`) used one node per character, and each node had `children = new Array(37)`: slots 0-25 for `a-z`, 26-35 for `0-9`, 36 for space. A child lookup was an array index, but every node paid for 37 slots even though most deep nodes have one child. Measured: 4,850,630 nodes and 4,394 MiB of heap for 1M terms (`bench/results/trie-bench-full.json`).
 
-- Faster: a child lookup is an array index, with no hashing.
-- Costs memory: every node pays for 37 slots (about 350 bytes in V8) even when it has a single child, which is true for most deep nodes. A `Map` or sorted list of children would be smaller for sparse nodes and a bit slower.
-- Forces a fixed alphabet. Every input therefore goes through `normalizeQuery()`. Before this, punctuation was mapped to the space slot while the original text was kept, so `"c++"` and `"c--"` ended at the same node and overwrote each other's counts (fixed in v2.0.0). Non-ASCII letters are dropped. A real system would transliterate them first.
+The current trie (`src/trie-radix.ts`, class `RadixTrie`, the default) changes three things. The estimate behind them is in [docs/MEMORY_V3.md](docs/MEMORY_V3.md).
 
-Measured node counts for the seeded data set: 10k terms make 73,559 nodes, 100k terms about 559k, 1M terms about 4.85M. Heap per term is in the benchmark results.
+- **Path compression.** A node stores the edge label that leads to it, so a run of single-child nodes is one node. Nodes remain only where a query ends or two queries diverge. For the seeded data set, 100k terms need 131,876 nodes instead of 558,714, and 1M terms need 1,396,994 instead of 4,850,630 (`bench/trie-shape.ts`, output in `bench/results/trie-shape.json`).
+- **Sorted child arrays.** Children are a small array sorted by the first character of their label (binary search), allocated only on nodes that have children.
+- **One entry object per query.** Every list that contains a query points at the same `{query, count, score}` object, instead of each node keeping its own copy.
+
+The top-10 lists are unchanged: both modes, on every node, same ordering and tie-break. A prefix that ends in the middle of an edge uses the list of the node at the end of that edge, which is correct because every stored query under that point passes through that node.
+
+Select the implementation with `TRIE_IMPL=radix` (default) or `TRIE_IMPL=array`. The methods of `Trie` are unchanged; `root` is now opaque (typed `object`). `tests/trie-impls.test.ts` runs the same brute-force comparison against both.
+
+Like the array trie, this index covers only `a-z`, `0-9` and space, so every input goes through `normalizeQuery()`. Before that, punctuation was mapped to the space slot while the original text was kept, so `"c++"` and `"c--"` ended at the same node and overwrote each other's counts (fixed in v2.0.0). Non-ASCII letters are dropped. A real system would transliterate them first.
+
+Trade-offs of the radix trie:
+
+- **Insert has more cases.** A new query can split an edge, and each step does a binary search and a label comparison.
+- **Each lookup step does more work.** A step is a binary search over at most 37 children plus a label comparison, where the array trie did one index. A lookup visits fewer nodes. The measured lookup change is in [Benchmarks](#6-benchmarks).
+- **The code is harder to read** than the array trie, which is one reason the array version is kept and tested beside it.
 
 ### Trending score
 
@@ -172,18 +184,19 @@ npm start              # node dist/server.js
 
 `public/` is build output and is not committed. Run `npm run build` (or `npm run build:frontend`) before starting the server, or the UI will 404 while the API still works. For UI development, run `npm run dev --prefix frontend`; it proxies the API to port 3000.
 
-Environment variables: `PORT` (default 3000), `DB_PATH` (default `./typeahead.db`), `SEED_TERMS` (rows to auto-seed when the database is empty, default 105000). The seed data is deterministic (seeded RNG): same size, same data.
+Environment variables: `PORT` (default 3000), `DB_PATH` (default `./typeahead.db`), `SEED_TERMS` (rows to auto-seed when the database is empty, default 105000), `TRIE_IMPL` (`radix`, the default, or `array`). The seed data is deterministic (seeded RNG): same size, same data.
 
 ### Tests
 
 ```bash
-npm test               # Jest, 67 tests
+npm test               # Jest, 105 tests
 npm run typecheck      # tsc over src, tests and bench
 ```
 
 | Suite | What it checks |
 |---|---|
 | `trie.test.ts` | ordering, top-10 cut-off, normalisation, trailing space, trending vs basic, hourly refresh |
+| `trie-impls.test.ts` | both tries (array and radix) against a brute-force scan on seeded random data: every prefix of every stored query including mid-edge ones, prefixes with no match, both modes, an hour change; prefix-split cases (`test`/`team`/`te`/`t`), repeats, normalisation; array and radix agree; node counts match `bench/trie-shape.ts` |
 | `trie-property.test.ts` | top-10 of every prefix equals a brute-force sort, 5 seeds x 2,000 random searches, before and after an hour change |
 | `cache.test.ts` | ring routing, 10k-key remapping on add/remove, spread vs virtual nodes, TTL eviction |
 | `buffer.test.ts` | size and timer flush, aggregation, rollback and retry on failure, previous-hour bucket, overlapping flushes, shutdown flush |
@@ -199,34 +212,49 @@ bash bench/run-all.sh           # full run (use an idle machine)
 bash bench/run-all.sh --quick   # small smoke run, results not committed
 ```
 
-**Trie micro-benchmark** (`bench/trie-bench.ts`, node:20, `--cpus=2`): builds the trie from 100k and 1M seeded Zipf-distributed terms, then times 100,000 `getSuggestions()` calls (after 10,000 warm-up calls) on prefixes of length 1-6 sampled from the stored terms. Each call is timed with `process.hrtime.bigint()`. Reports build time, heap growth after forced GC, and p50 / p99 / p99.9 latency in microseconds.
+**Trie micro-benchmark** (`bench/trie-bench.ts`, node:20, `--cpus=2`, 7 GB container limit): builds the trie from 100k and 1M seeded Zipf-distributed terms, once with the array trie and once with the radix trie, each in its own Node process. Then it times 100,000 `getSuggestions()` calls (after 10,000 warm-up calls) on prefixes of length 1-6 sampled from the stored terms. Each call is timed with `process.hrtime.bigint()`. Reports build time, heap growth after forced GC, and p50 / p99 / p99.9 latency in microseconds. Run it alone with `bash bench/run-trie.sh`; results go to `bench/results/trie-bench-v3.json` and `.md`.
 
 **HTTP load test** (`bench/load.js`, `bench/run-load.sh`): the server (node:20, `--cpus=2`, 100k seeded terms) and k6 (`grafana/k6:2.3.0`, `--cpus=2`) run on the same Docker network. 50 virtual users send `GET /suggest` with random prefixes, without think time, for 30 s after a 10 s warm-up. Reports req/s, p50 / p95 / p99 and error rate. Most of these requests are cache hits, because short prefixes repeat. The server's hit rate is saved next to the results.
 
 Hardware: Apple M4 Pro (12 cores), Docker Desktop Linux VM, Node 20.
 
+**Trie node counts** (seeded data set, `bench/trie-shape.ts`, output in `bench/results/trie-shape.json`; they equal the `trieNodes` field of the benchmark):
+
+| Terms | Array trie | Radix trie | Fewer nodes |
+|---:|---:|---:|---:|
+| 100,000 | 558,714 | 131,876 | 4.24x |
+| 1,000,000 | 4,850,630 | 1,396,994 | 3.47x |
+
+**Baseline** (array trie only, Nov 2026, `bench/results/trie-bench-full.json`, `bench/results/load-full.json`). Heap figures are MiB (bytes / 1024 / 1024); the JSON field is called `heapMB`.
+
 | Benchmark | Result |
 |---|---|
-| Trie, 100k terms | 559k nodes, built in 2.5 s, 532 MB heap; lookup p50 0.25 µs, p99 2.75 µs, p99.9 5.6 µs |
-| Trie, 1M terms | 4.85M nodes, built in 132 s, 4.4 GB heap; lookup p50 2.1 µs, p99 35 µs, p99.9 83 µs |
+| Trie, 100k terms | 558,714 nodes, built in 2,475 ms, 531.9 MiB heap; lookup p50 0.25 µs, p99 2.75 µs, p99.9 5.63 µs |
+| Trie, 1M terms | 4,850,630 nodes, built in 132,258 ms, 4,394 MiB heap; lookup p50 2.08 µs, p99 35.04 µs, p99.9 83.08 µs |
 | HTTP, 50 VUs x 30 s (100k terms) | 10,957 req/s, p50 3.6 ms, p95 7.9 ms, p99 9.9 ms, 0 errors (97.9% cache hits) |
 
-Measured Nov 2026 on an Apple M4 Pro (Docker Desktop, `--cpus=2` per container). Full output in `bench/results/`.
+Measured Nov 2026 on an Apple M4 Pro (Docker Desktop, `--cpus=2` per container). Full output in `bench/results/`. The HTTP test ran with the array trie and has not been repeated with the radix trie.
+
+The baseline trie benchmark let the generated data set be collected before it measured the heap after the build, so its heap figure is slightly too low (the data set's size was subtracted). `bench/trie-bench.ts` now keeps the data set reachable. The array-trie rows of `trie-bench-v3.json` come from the fixed harness and replace these two heap figures when comparing the two implementations.
 
 What these numbers say:
 
-- **Lookups are fast because top-K is precomputed.** A query walks at most `len(prefix)` nodes and copies a stored list, so latency barely depends on how many terms match.
-- **Memory is the price.** Each node holds a 37-slot child array plus its top-10 list, about 0.9 KB per node, so 1M terms need ~4.4 GB of heap and the build takes over 2 minutes. The next step would be a `Map` or a sorted child array for sparse nodes, or a compressed (radix) trie, trading some lookup speed for several times less memory.
+- **Lookups are fast because top-K is precomputed.** A query walks at most `len(prefix)` characters and copies a stored list, so latency barely depends on how many terms match.
+- **Memory was the price.** The array trie held a 37-slot child array plus its top-10 lists on every node: 998 bytes per node at 100k terms and 950 at 1M (heap divided by nodes). 1M terms needed 4,394 MiB of heap and the build took 132,258 ms. The radix trie removes the per-node child array and has 4.24x fewer nodes at 100k terms and 3.47x fewer at 1M.
+- **Lookup trade-off.** Each step of a radix lookup does a binary search over the sorted children and a label comparison, where the array trie does one index. In exchange a lookup visits fewer nodes.
 - **The HTTP number mostly measures the cache path.** With 97.9% hits, the single Node process spends its time on HTTP handling and JSON, not the trie.
 
-The 1M-term run needs about 7 GB of Docker memory (the script allows a 6 GB Node heap).
+The 1M-term trie run starts the array trie, which needs 4,394 MiB of heap, so it needs about 7 GB of Docker memory (the script allows a 6 GB Node heap and caps the container at 7 GB).
 
 ## 7. Project layout
 
 ```
 src/
   server.ts     Express routes, hourly score refresh, cache invalidation, shutdown
-  trie.ts       Trie with per-node top-10 (basic and trending)
+  trie.ts       Trie entry point: picks the radix or array trie (TRIE_IMPL)
+  trie-radix.ts radix trie with sorted child arrays and per-node top-10 (default)
+  trie-array.ts original 37-slot array trie, kept as the memory baseline
+  trie-common.ts shared types and the hour helper
   normalize.ts  input normalisation shared by trie and API
   cache.ts      HashRing (consistent hashing, virtual nodes) and CacheNode (Map + TTL)
   buffer.ts     write-behind buffer
@@ -235,7 +263,8 @@ src/
   dataset.ts    deterministic Zipf data set (seeded RNG)
   seed.ts       writes the data set into SQLite
 frontend/       React + Vite dashboard (builds into public/)
-bench/          benchmarks and results
+bench/          benchmarks and results (trie-bench, trie-shape, v8-unit-costs)
+docs/           MEMORY_V3.md: the radix trie design and its per-node estimate
 tests/          Jest suites
 ```
 
