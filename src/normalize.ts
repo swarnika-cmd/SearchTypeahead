@@ -9,10 +9,10 @@ export const MAX_QUERY_LENGTH = 100;
  *
  * Example: "  C++   Tutorial! " -> "c tutorial"
  *
- * The trie has exactly 37 child slots (a-z, 0-9, space). After this step every
- * character in the string has its own slot, so two different strings can never
- * end at the same trie node. Non-ASCII letters (e.g. "é") are dropped; a real
- * system would transliterate them first.
+ * The trie indexes exactly 37 characters (a-z, 0-9, space; the array trie has
+ * one child slot for each). After this step every character in the string is one
+ * of them, so two different strings can never end at the same trie node.
+ * Non-ASCII letters (e.g. "é") are dropped; a real system would transliterate them first.
  */
 export function normalizeQuery(raw: string): string {
   return raw.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
