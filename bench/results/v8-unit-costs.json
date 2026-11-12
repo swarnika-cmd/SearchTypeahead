@@ -1,0 +1,67 @@
+{
+  "note": "heapUsed growth per item after forced GC, 200000 items each (bytes)",
+  "environment": {
+    "date": "2026-11-12T23:21:25.446Z",
+    "node": "v20.20.2",
+    "platform": "linux arm64",
+    "cpuModel": "unknown",
+    "cpusVisible": 12,
+    "dockerCpus": "2",
+    "host": "Apple M4 Pro, 12 cores; Docker Desktop: 12 CPUs, 8319238144 bytes RAM",
+    "gcExposed": true
+  },
+  "costs": [
+    {
+      "name": "array slot (holder cost per item)",
+      "bytes": 6.9
+    },
+    {
+      "name": "empty array []",
+      "bytes": 32
+    },
+    {
+      "name": "array [x] then push (grows to capacity 17)",
+      "bytes": 182.9
+    },
+    {
+      "name": "array literal [x, y] (exact)",
+      "bytes": 64
+    },
+    {
+      "name": "new Array(37).fill(null)",
+      "bytes": 343.6
+    },
+    {
+      "name": "new Array(3) filled with objects ({}), array only",
+      "bytes": 72
+    },
+    {
+      "name": "empty Map",
+      "bytes": 182.6
+    },
+    {
+      "name": "object {query, count}",
+      "bytes": 40
+    },
+    {
+      "name": "object {query, count, score}",
+      "bytes": 62.7
+    },
+    {
+      "name": "class instance, 6 fields (2 empty arrays)",
+      "bytes": 136.1
+    },
+    {
+      "name": "string slice, 6 chars (copied)",
+      "bytes": 24
+    },
+    {
+      "name": "string slice, 12 chars (copied)",
+      "bytes": 32
+    },
+    {
+      "name": "string slice, 20 chars (sliced string)",
+      "bytes": 96
+    }
+  ]
+}

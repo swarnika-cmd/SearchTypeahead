@@ -1,0 +1,80 @@
+{
+  "note": "structure counts only, no timing",
+  "k": 10,
+  "shapes": [
+    {
+      "terms": 10000,
+      "arrayNodes": 73559,
+      "radixNodes": 14002,
+      "nodeReduction": 5.25,
+      "arrayListSlots": 99173,
+      "radixListSlots": 28073,
+      "radixLeaves": 8582,
+      "radixChildCountHistogram": {
+        "0": 8582,
+        "1": 1355,
+        "2": 2728,
+        "3": 656,
+        "4": 325,
+        "5": 135,
+        "6": 63,
+        "7": 21,
+        "8": 1,
+        "9": 2,
+        "17": 1,
+        "18": 12,
+        "19": 30,
+        "20": 40,
+        "21": 32,
+        "22": 16,
+        "23": 3
+      },
+      "avgRadixLabelLength": 5.25
+    },
+    {
+      "terms": 100000,
+      "arrayNodes": 558714,
+      "radixNodes": 131876,
+      "nodeReduction": 4.24,
+      "arrayListSlots": 1037766,
+      "radixListSlots": 352638,
+      "radixLeaves": 82102,
+      "radixChildCountHistogram": {
+        "0": 82102,
+        "1": 16942,
+        "2": 14937,
+        "3": 4958,
+        "4": 4563,
+        "5": 3620,
+        "6": 2682,
+        "7": 1208,
+        "8": 412,
+        "9": 280,
+        "10": 31,
+        "11": 7,
+        "23": 134
+      },
+      "avgRadixLabelLength": 4.24
+    }
+  ],
+  "nodeCounts": [
+    {
+      "terms": 10000,
+      "arrayNodes": 73559,
+      "radixNodes": 14002,
+      "nodeReduction": 5.25
+    },
+    {
+      "terms": 100000,
+      "arrayNodes": 558714,
+      "radixNodes": 131876,
+      "nodeReduction": 4.24
+    },
+    {
+      "terms": 1000000,
+      "arrayNodes": 4850630,
+      "radixNodes": 1396994,
+      "nodeReduction": 3.47
+    }
+  ]
+}
