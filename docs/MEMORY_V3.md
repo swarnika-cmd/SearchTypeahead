@@ -141,3 +141,20 @@ The empty `Map` per term (182.6 bytes, a third of the radix total) is now the la
 Allocating `recentCounts` lazily would remove it for queries that were never searched this or last hour,
 but `getRecentCounts()` returns the stored map and `POST /search` mutates it before re-inserting, so
 that changes the behaviour of `Trie` and is out of scope here.
+
+## Measured result
+
+Source: bench/results/trie-bench-v3.json (2026-11-13T01:10:34.935Z, Apple M4 Pro, 12 cores; Docker Desktop: 12 CPUs, 8319238144 bytes RAM), sequential run on an otherwise idle machine, array and radix each in their own process.
+
+| | Estimate | Measured |
+|---|---:|---:|
+| Array trie, 100k terms (MiB) | 538.0 | 540.1 |
+| Radix trie, 100k terms (MiB) | 51.9 | 54.3 |
+| Radix trie, 1M terms (MiB) | 519 to 550 | 529.2 |
+| Array trie, 1M terms (MiB) | not estimated | 4477 |
+
+Heap ratio array / radix: 9.95x at 100k, 8.46x at 1M. Node counts: 558,714 vs 131,876 (100k), 4,850,630 vs 1,396,994 (1M).
+Build time (ms): 74681 array, 5736 radix at 1M terms.
+Lookup (us, p50 / p99 / p99.9), 1M terms: 0.67 / 5.83 / 10.79 array, 0.21 / 2.92 / 7.71 radix.
+
+The array estimate at 100k was 0.4% low and the radix estimate at 100k was 4.6% low (54.3 against 51.9 MiB, 2.4 MiB more). The 1M measurement of 529.2 MiB is inside the 519 to 550 MiB range (2.0% above the per-term figure, 3.8% below the per-node figure). The 2.4 MiB gap at 100k is not explained; the model counts the structures listed above and nothing else. Lookups did not get slower: radix p99 at 1M is 2.92 us against 5.83 us for the array trie.

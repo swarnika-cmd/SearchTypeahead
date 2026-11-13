@@ -1,0 +1,82 @@
+{
+  "environment": {
+    "date": "2026-11-13T01:10:34.935Z",
+    "node": "v20.20.2",
+    "platform": "linux arm64",
+    "cpuModel": "unknown",
+    "cpusVisible": 12,
+    "dockerCpus": "2",
+    "host": "Apple M4 Pro, 12 cores; Docker Desktop: 12 CPUs, 8319238144 bytes RAM",
+    "gcExposed": true,
+    "impls": [
+      "array",
+      "radix"
+    ]
+  },
+  "results": [
+    {
+      "impl": "array",
+      "terms": 100000,
+      "trieNodes": 558714,
+      "buildMs": 2523,
+      "heapMB": 540.1,
+      "bytesPerTerm": 5664,
+      "lookups": 100000,
+      "latencyUs": {
+        "p50": 0.33,
+        "p99": 3.54,
+        "p999": 6.96,
+        "mean": 1.14,
+        "max": 57752.29
+      }
+    },
+    {
+      "impl": "radix",
+      "terms": 100000,
+      "trieNodes": 131876,
+      "buildMs": 375,
+      "heapMB": 54.3,
+      "bytesPerTerm": 569,
+      "lookups": 100000,
+      "latencyUs": {
+        "p50": 0.17,
+        "p99": 1.75,
+        "p999": 5.29,
+        "mean": 0.61,
+        "max": 33844.25
+      }
+    },
+    {
+      "impl": "array",
+      "terms": 1000000,
+      "trieNodes": 4850630,
+      "buildMs": 74681,
+      "heapMB": 4477,
+      "bytesPerTerm": 4694,
+      "lookups": 100000,
+      "latencyUs": {
+        "p50": 0.67,
+        "p99": 5.83,
+        "p999": 10.79,
+        "mean": 2.73,
+        "max": 56856.71
+      }
+    },
+    {
+      "impl": "radix",
+      "terms": 1000000,
+      "trieNodes": 1396994,
+      "buildMs": 5736,
+      "heapMB": 529.2,
+      "bytesPerTerm": 555,
+      "lookups": 100000,
+      "latencyUs": {
+        "p50": 0.21,
+        "p99": 2.92,
+        "p999": 7.71,
+        "mean": 0.99,
+        "max": 53718.54
+      }
+    }
+  ]
+}

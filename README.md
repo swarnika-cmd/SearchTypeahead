@@ -77,7 +77,7 @@ The lists stay correct because counts only go up between rebuilds. A query that 
 
 ### Radix trie instead of a 37-slot array
 
-The first version (`src/trie-array.ts`, class `ArrayTrie`) used one node per character, and each node had `children = new Array(37)`: slots 0-25 for `a-z`, 26-35 for `0-9`, 36 for space. A child lookup was an array index, but every node paid for 37 slots even though most deep nodes have one child. Measured: 4,850,630 nodes and 4,394 MiB of heap for 1M terms (`bench/results/trie-bench-full.json`).
+The first version (`src/trie-array.ts`, class `ArrayTrie`) used one node per character, and each node had `children = new Array(37)`: slots 0-25 for `a-z`, 26-35 for `0-9`, 36 for space. A child lookup was an array index, but every node paid for 37 slots even though most deep nodes have one child. Measured: 4,850,630 nodes and 4477 MiB of heap for 1M terms (`bench/results/trie-bench-v3.json`).
 
 The current trie (`src/trie-radix.ts`, class `RadixTrie`, the default) changes three things. The estimate behind them is in [docs/MEMORY_V3.md](docs/MEMORY_V3.md).
 
@@ -93,8 +93,11 @@ Like the array trie, this index covers only `a-z`, `0-9` and space, so every inp
 
 Trade-offs of the radix trie:
 
-- **Insert has more cases.** A new query can split an edge, and each step does a binary search and a label comparison.
-- **Each lookup step does more work.** A step is a binary search over at most 37 children plus a label comparison, where the array trie did one index. A lookup visits fewer nodes. The measured lookup change is in [Benchmarks](#6-benchmarks).
+- **Insert has more cases.** A new query can split an edge, and each step does a binary search and a label comparison. The split logic is where the bugs would be, which is why `tests/trie-impls.test.ts` has explicit `test` / `team` / `te` / `t` cases.
+- **Top-10 lists are copy-on-write.** A list that is shared between a split node and its child must never be mutated in place, so an update builds a new array. That is safe but easy to break by editing a list directly.
+- **Prefixes can end mid-edge.** A prefix that stops inside a label is answered from the node at the end of that edge. This is correct, but it is a case the array trie never had, and it needs its own tests.
+- **Entry objects are shared.** One `{query, count, score}` object per query is referenced from every list that contains it, which saves memory (estimated 80.8 MiB without sharing against 51.9 MiB with it at 100k terms) but means a count update is visible through every list at once. It is only safe because counts are updated in one place.
+- **Each lookup step does more work** (a binary search over at most 37 children plus a label comparison, against one index). In the benchmark this was outweighed by visiting fewer nodes, see [Benchmarks](#6-benchmarks).
 - **The code is harder to read** than the array trie, which is one reason the array version is kept and tested beside it.
 
 ### Trending score
@@ -218,33 +221,37 @@ bash bench/run-all.sh --quick   # small smoke run, results not committed
 
 Hardware: Apple M4 Pro (12 cores), Docker Desktop Linux VM, Node 20.
 
-**Trie node counts** (seeded data set, `bench/trie-shape.ts`, output in `bench/results/trie-shape.json`; they equal the `trieNodes` field of the benchmark):
+**Trie, array vs radix** (`bench/results/trie-bench-v3.json`, 2026-11-13T01:10:34.935Z, Apple M4 Pro, 12 cores; Docker Desktop: 12 CPUs, 8319238144 bytes RAM; same data set, same prefixes, each implementation in its own process; heap in MiB):
 
-| Terms | Array trie | Radix trie | Fewer nodes |
-|---:|---:|---:|---:|
-| 100,000 | 558,714 | 131,876 | 4.24x |
-| 1,000,000 | 4,850,630 | 1,396,994 | 3.47x |
+| | Array trie | Radix trie |
+|---|---:|---:|
+| Nodes, 100k terms | 558,714 | 131,876 |
+| Nodes, 1M terms | 4,850,630 | 1,396,994 |
+| Heap, 100k terms (MiB) | 540.1 | 54.3 |
+| Heap, 1M terms (MiB) | 4477 | 529.2 |
+| Build, 100k terms (ms) | 2523 | 375 |
+| Build, 1M terms (ms) | 74681 | 5736 |
+| Lookup p50 / p99 / p99.9, 100k terms (us) | 0.33 / 3.54 / 6.96 | 0.17 / 1.75 / 5.29 |
+| Lookup p50 / p99 / p99.9, 1M terms (us) | 0.67 / 5.83 / 10.79 | 0.21 / 2.92 / 7.71 |
 
-**Baseline** (array trie only, Nov 2026, `bench/results/trie-bench-full.json`, `bench/results/load-full.json`). Heap figures are MiB (bytes / 1024 / 1024); the JSON field is called `heapMB`.
+Node counts also come from `bench/trie-shape.ts` (output in `bench/results/trie-shape.json`) and equal the `trieNodes` field above. Heap figures are MiB (bytes / 1024 / 1024); the JSON field is called `heapMB`.
+
+**HTTP load test, measured with the array trie** (Nov 2026, `bench/results/load-full.json`; not repeated with the radix trie):
 
 | Benchmark | Result |
 |---|---|
-| Trie, 100k terms | 558,714 nodes, built in 2,475 ms, 531.9 MiB heap; lookup p50 0.25 µs, p99 2.75 µs, p99.9 5.63 µs |
-| Trie, 1M terms | 4,850,630 nodes, built in 132,258 ms, 4,394 MiB heap; lookup p50 2.08 µs, p99 35.04 µs, p99.9 83.08 µs |
-| HTTP, 50 VUs x 30 s (100k terms) | 10,957 req/s, p50 3.6 ms, p95 7.9 ms, p99 9.9 ms, 0 errors (97.9% cache hits) |
+| HTTP, 50 VUs x 30 s (100k terms, array trie) | 10,957 req/s, p50 3.6 ms, p95 7.9 ms, p99 9.9 ms, 0 errors (97.9% cache hits) |
 
-Measured Nov 2026 on an Apple M4 Pro (Docker Desktop, `--cpus=2` per container). Full output in `bench/results/`. The HTTP test ran with the array trie and has not been repeated with the radix trie.
-
-The baseline trie benchmark let the generated data set be collected before it measured the heap after the build, so its heap figure is slightly too low (the data set's size was subtracted). `bench/trie-bench.ts` now keeps the data set reachable. The array-trie rows of `trie-bench-v3.json` come from the fixed harness and replace these two heap figures when comparing the two implementations.
+The earlier committed trie baseline (`bench/results/trie-bench-full.json`: 4,394 MiB heap and lookup p99 35.04 us at 1M terms) was measured with a harness that let the generated data set be collected inside the measurement window, so its heap figure was too low, and under different machine load. `bench/trie-bench.ts` now keeps the data set reachable. The array rows of `trie-bench-v3.json` supersede the old file for this comparison.
 
 What these numbers say:
 
 - **Lookups are fast because top-K is precomputed.** A query walks at most `len(prefix)` characters and copies a stored list, so latency barely depends on how many terms match.
-- **Memory was the price.** The array trie held a 37-slot child array plus its top-10 lists on every node: 998 bytes per node at 100k terms and 950 at 1M (heap divided by nodes). 1M terms needed 4,394 MiB of heap and the build took 132,258 ms. The radix trie removes the per-node child array and has 4.24x fewer nodes at 100k terms and 3.47x fewer at 1M.
-- **Lookup trade-off.** Each step of a radix lookup does a binary search over the sorted children and a label comparison, where the array trie does one index. In exchange a lookup visits fewer nodes.
+- **Memory.** Heap for the radix trie is 54.3 MiB at 100k terms and 529.2 MiB at 1M, against 540.1 and 4477 MiB for the array trie: 9.95x and 8.46x less. Nodes are 4.24x and 3.47x fewer, so the per-node saving (no 37-slot child array, shared entry objects) is part of the gain as well. The estimate in docs/MEMORY_V3.md was 51.9 MiB at 100k and 519 to 550 MiB at 1M. Build time falls from 2523 to 375 ms at 100k (6.73x) and from 74681 to 5736 ms at 1M (13.02x).
+- **Lookup trade-off.** Each step of a radix lookup does a binary search and a label comparison, where the array trie does one index; a lookup visits fewer nodes. Measured at 1M terms, radix p50 is 0.31x and p99 is 0.50x the array trie's (0.67 / 5.83 us array, 0.21 / 2.92 us radix), so lookups were faster, not slower. A plausible reason is fewer nodes to walk and a working set about 8x smaller, which fits the caches better; that is an explanation, not something this benchmark isolates, and it need not hold on other hardware or data. At 100k terms the direction is the same: p50 0.17 us against 0.33 us, p99 1.75 us against 3.54 us.
 - **The HTTP number mostly measures the cache path.** With 97.9% hits, the single Node process spends its time on HTTP handling and JSON, not the trie.
 
-The 1M-term trie run starts the array trie, which needs 4,394 MiB of heap, so it needs about 7 GB of Docker memory (the script allows a 6 GB Node heap and caps the container at 7 GB).
+The 1M-term trie run starts the array trie, which needs 4477 MiB of heap, so it needs about 7 GB of Docker memory (the script allows a 6 GB Node heap and caps the container at 7 GB).
 
 ## 7. Project layout
 
